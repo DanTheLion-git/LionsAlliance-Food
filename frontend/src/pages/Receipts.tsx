@@ -4,19 +4,19 @@ import {
   getReceipts, uploadReceipt, getReceipt,
   linkReceiptItem, addReceiptItemToInventory,
   deleteReceiptItem, deleteReceipt,
-  getFoods, createFood, searchOFF
+  getFoods, createFood, searchOFF, applyAllMappings
 } from '../api/client'
 
 type ReceiptSummary = {
   id: number; store: string; filename: string;
-  upload_date: string; parsed: boolean; item_count: number
+  upload_date: string; purchase_date?: string; parsed: boolean; item_count: number
 }
 type ReceiptDetail = {
   id: number; store: string; filename: string; upload_date: string;
   items: Array<{
     id: number; raw_name: string; price: number | null; quantity: number;
-    reviewed: boolean; food_item_id: number | null;
-    food?: { id: number; name: string; brand: string; calories_per_100g: number } | null
+    parsed_weight_g: number | null; reviewed: boolean; food_item_id: number | null;
+    food?: { id: number; name: string; brand: string; calories_per_100g: number; serving_size_g: number | null } | null
   }>
 }
 type FoodItem = { id: number; name: string; brand: string; calories_per_100g: number }
@@ -132,7 +132,7 @@ function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
         className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 text-left">
         <div className="flex items-center gap-3">
           <span className="font-semibold capitalize">{receipt.store}</span>
-          <span className="text-gray-400 text-sm">{receipt.upload_date?.slice(0, 10)}</span>
+          <span className="text-gray-400 text-sm">{(receipt.purchase_date || receipt.upload_date)?.slice(0, 10)}</span>
           <span className="text-gray-500 text-sm">{receipt.item_count} items</span>
           {receipt.parsed && <span className="text-green-600 text-xs bg-green-50 px-2 py-0.5 rounded-full">Parsed</span>}
         </div>
@@ -149,16 +149,33 @@ function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
         <div className="border-t divide-y">
           {detail.items.map(item => (
             <div key={item.id} className={`px-4 py-2 flex items-center justify-between text-sm ${!item.food_item_id ? 'bg-orange-50' : ''}`}>
-              <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
                 <span className={item.food ? 'text-gray-800' : 'text-gray-500 italic'}>{item.raw_name}</span>
                 {item.food && <span className="text-green-700 text-xs">→ {item.food.name}</span>}
+                {/* Quantity badge */}
+                {item.quantity > 1 && (
+                  <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">×{item.quantity}</span>
+                )}
+                {/* Weight badge */}
+                {item.parsed_weight_g != null && (
+                  <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                    {item.parsed_weight_g >= 1000
+                      ? `${(item.parsed_weight_g / 1000).toFixed(item.parsed_weight_g % 1000 === 0 ? 0 : 1)}kg/L`
+                      : `${item.parsed_weight_g}g/ml`}
+                  </span>
+                )}
                 {item.reviewed && item.food && (
                   <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">✓ In inventory</span>
                 )}
                 {!item.food_item_id && (
                   <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">⚠ Needs cataloguing</span>
                 )}
-                {item.price != null && <span className="text-gray-400 ml-1">€{item.price.toFixed(2)}</span>}
+                {item.price != null && (
+                  <span className="text-gray-400 ml-1">
+                    €{(item.price * item.quantity).toFixed(2)}
+                    {item.quantity > 1 && <span className="text-gray-300 text-xs ml-1">(€{item.price.toFixed(2)} ea)</span>}
+                  </span>
+                )}
               </div>
               <div className="flex gap-2 ml-2 shrink-0">
                 <button onClick={() => setLinkTarget(item.id)}
@@ -192,8 +209,25 @@ export default function Receipts() {
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
+  const [applyMsg, setApplyMsg] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
+
+  const { data: receipts, isLoading } = useQuery<ReceiptSummary[]>({
+    queryKey: ['receipts'],
+    queryFn: () => getReceipts().then(r => r.data),
+  })
+
+  const applyMappings = useMutation({
+    mutationFn: () => applyAllMappings(),
+    onSuccess: (res) => {
+      const d = res.data
+      setApplyMsg(`✓ Applied ${d.mappings_applied} rules → updated ${d.receipt_items_updated} receipt items, ${d.inventory_items_updated} inventory items`)
+      qc.invalidateQueries({ queryKey: ['receipts'] })
+      qc.invalidateQueries({ queryKey: ['inventory'] })
+      setTimeout(() => setApplyMsg(''), 5000)
+    },
+  })
 
   const { data: receipts, isLoading } = useQuery<ReceiptSummary[]>({
     queryKey: ['receipts'],
@@ -222,7 +256,16 @@ export default function Receipts() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800">Receipts</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-gray-800">Receipts</h1>
+        <button
+          onClick={() => applyMappings.mutate()}
+          disabled={applyMappings.isPending}
+          className="text-sm bg-indigo-500 text-white px-3 py-2 rounded-lg hover:bg-indigo-600 disabled:opacity-50 shrink-0">
+          {applyMappings.isPending ? 'Applying…' : '🔗 Re-apply Mappings'}
+        </button>
+      </div>
+      {applyMsg && <p className="text-green-700 text-sm bg-green-50 rounded-lg px-3 py-2">{applyMsg}</p>}
 
       <div className="bg-white rounded-xl shadow p-4 space-y-3">
         <h2 className="font-semibold text-gray-700">Upload Receipt</h2>

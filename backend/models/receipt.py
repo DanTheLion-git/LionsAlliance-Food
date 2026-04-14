@@ -24,6 +24,7 @@ class ReceiptItem(Base):
     price = Column(Float, nullable=True)
     food_item_id = Column(Integer, ForeignKey("food_items.id"), nullable=True)
     reviewed = Column(Boolean, default=False)
+    parsed_weight_g = Column(Float, nullable=True)
 
 
 class ReceiptNameMapping(Base):

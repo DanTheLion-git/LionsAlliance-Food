@@ -7,13 +7,14 @@ type FoodItem = {
   calories_per_100g?: number; protein_per_100g?: number;
   carbs_per_100g?: number; fat_per_100g?: number;
   fiber_per_100g?: number; sugar_per_100g?: number;
-  sodium_per_100g?: number; unit?: string; source?: string;
+  sodium_per_100g?: number; serving_size_g?: number; unit?: string; source?: string;
 }
 
 const emptyForm = {
   name: '', brand: '', barcode: '', off_id: '',
   calories_per_100g: '', protein_per_100g: '', carbs_per_100g: '',
   fat_per_100g: '', fiber_per_100g: '', sugar_per_100g: '', sodium_per_100g: '',
+  serving_size_g: '',
   unit: 'g', source: 'manual',
 }
 
@@ -43,6 +44,7 @@ function FoodForm({
       fiber_per_100g: toNum(form.fiber_per_100g),
       sugar_per_100g: toNum(form.sugar_per_100g),
       sodium_per_100g: toNum(form.sodium_per_100g),
+      serving_size_g: toNum(form.serving_size_g),
       unit: form.unit, source: form.source,
     })
   }
@@ -84,6 +86,10 @@ function FoodForm({
         <div>
           <label className={lbl}>Fiber /100g</label>
           <input type="number" step="0.1" value={form.fiber_per_100g} onChange={f('fiber_per_100g')} className={inp} />
+        </div>
+        <div>
+          <label className={lbl}>Package weight/vol (g or ml)</label>
+          <input type="number" step="1" value={form.serving_size_g} onChange={f('serving_size_g')} className={inp} placeholder="e.g. 400" />
         </div>
         <div>
           <label className={lbl}>Unit</label>
@@ -194,6 +200,7 @@ function EditModal({ food, onClose }: { food: FoodItem; onClose: () => void }) {
     carbs_per_100g: String(food.carbs_per_100g ?? ''),
     fat_per_100g: String(food.fat_per_100g ?? ''),
     fiber_per_100g: String(food.fiber_per_100g ?? ''),
+    serving_size_g: String(food.serving_size_g ?? ''),
     unit: food.unit ?? 'g', source: food.source ?? 'manual',
   }
   return (
@@ -248,6 +255,7 @@ export default function FoodCatalog() {
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Brand</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">Pkg (g/ml)</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">kcal</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">P(g)</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">C(g)</th>
@@ -261,6 +269,7 @@ export default function FoodCatalog() {
                 <tr key={f.id} className="hover:bg-gray-50">
                   <td className="px-4 py-2 font-medium">{f.name}</td>
                   <td className="px-4 py-2 text-gray-500">{f.brand ?? '—'}</td>
+                  <td className="px-4 py-2 text-right text-gray-500">{f.serving_size_g ? `${f.serving_size_g}` : '—'}</td>
                   <td className="px-4 py-2 text-right">{f.calories_per_100g ?? '—'}</td>
                   <td className="px-4 py-2 text-right">{f.protein_per_100g ?? '—'}</td>
                   <td className="px-4 py-2 text-right">{f.carbs_per_100g ?? '—'}</td>
@@ -275,7 +284,7 @@ export default function FoodCatalog() {
                 </tr>
               ))}
               {foods?.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">No foods found.</td></tr>
+                <tr><td colSpan={9} className="px-4 py-6 text-center text-gray-400">No foods found.</td></tr>
               )}
             </tbody>
           </table>

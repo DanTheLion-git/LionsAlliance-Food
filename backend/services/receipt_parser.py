@@ -5,6 +5,50 @@ from PIL import Image
 import pdfplumber
 from datetime import datetime
 
+# Multipliers to convert any weight/volume unit to grams or ml (unified scale)
+_UNIT_TO_G = {
+    'kg': 1000.0, 'g': 1.0, 'gr': 1.0,
+    'l': 1000.0, 'liter': 1000.0, 'ltr': 1000.0,
+    'ml': 1.0, 'cl': 10.0, 'dl': 100.0,
+}
+
+
+def parse_weight_from_name(name: str) -> float | None:
+    """Parse package weight/volume from a product name.
+
+    Returns the value in grams (for solid) or ml (for liquid) — both share
+    the same numeric scale so we store them uniformly.
+
+    Examples:
+      "GL Gouda jung HF3 SHB400g"   → 400.0
+      "Capri Sun Multi 10x0,2L PK"  → 2000.0  (10 × 200 ml)
+      "Milch 1,5% 1L"               → 1000.0
+      "Chips 175g"                  → 175.0
+      "Wasser 6x1,5L"               → 9000.0
+    """
+    # Pack pattern first: "10x0,2L", "6x1,5L", "3x330ml"
+    pack_m = re.search(
+        r'(\d+)\s*[xX]\s*(\d+(?:[,\.]\d+)?)\s*(kg|g|gr|l|liter|ltr|ml|cl|dl)\b',
+        name, re.IGNORECASE,
+    )
+    if pack_m:
+        count = float(pack_m.group(1))
+        amount = float(pack_m.group(2).replace(',', '.'))
+        unit = pack_m.group(3).lower()
+        return count * amount * _UNIT_TO_G.get(unit, 1.0)
+
+    # Simple pattern: "400g", "1,5L", "330 ml", "1.5kg"
+    simple_m = re.search(
+        r'(\d+(?:[,\.]\d+)?)\s*(kg|g|gr|l|liter|ltr|ml|cl|dl)\b',
+        name, re.IGNORECASE,
+    )
+    if simple_m:
+        amount = float(simple_m.group(1).replace(',', '.'))
+        unit = simple_m.group(2).lower()
+        return amount * _UNIT_TO_G.get(unit, 1.0)
+
+    return None
+
 
 def extract_netto_date(filepath: str) -> datetime | None:
     """Parse date from filename like Netto_Kassenbon_20240414-143022.pdf"""
@@ -61,7 +105,8 @@ def parse_jumbo_png(filepath: str) -> list[dict]:
                     pending_qty = 1.0
                     continue
                 if len(name) > 2 and not name.upper() == name:  # filter noise
-                    items.append({"raw_name": name, "price": price, "quantity": pending_qty})
+                    items.append({"raw_name": name, "price": price, "quantity": pending_qty,
+                                  "parsed_weight_g": parse_weight_from_name(name)})
                 pending_qty = 1.0
     return items
 
@@ -122,6 +167,7 @@ def parse_netto_pdf(filepath: str) -> tuple[list[dict], datetime | None]:
                                 "raw_name": name,
                                 "price": per_item,
                                 "quantity": pending_qty,
+                                "parsed_weight_g": parse_weight_from_name(name),
                             })
                         pending_qty = 1.0  # reset after consuming
     return items, extract_netto_date(filepath)
