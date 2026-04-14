@@ -14,6 +14,8 @@ def parse_jumbo_png(filepath: str) -> list[dict]:
     in_products = False
     price_pattern = re.compile(r"^(.+?)\s+(\d+[,\.]\d{2})\s*$")
     discount_pattern = re.compile(r"^(.+?)\s+(-\d+[,\.]\d{2})\s*$")
+    qty_pattern = re.compile(r"^(\d+)\s*[xX]\s*(?:[\d]+[,\.][\d]{2}\s*[A-Z]?)?\s*$")
+    pending_qty = 1.0
 
     for line in lines:
         line = line.strip()
@@ -30,6 +32,11 @@ def parse_jumbo_png(filepath: str) -> list[dict]:
             m = discount_pattern.match(line)
             if m:
                 continue
+            # Detect quantity multiplier lines ("3 x" or "3 x  1,99")
+            if qty_pattern.match(line):
+                qty_m = qty_pattern.match(line)
+                pending_qty = float(qty_m.group(1))
+                continue
             m = price_pattern.match(line)
             if m:
                 name = m.group(1).strip()
@@ -37,9 +44,11 @@ def parse_jumbo_png(filepath: str) -> list[dict]:
                 try:
                     price = float(price_str)
                 except ValueError:
-                    price = None
+                    pending_qty = 1.0
+                    continue
                 if len(name) > 2 and not name.upper() == name:  # filter noise
-                    items.append({"raw_name": name, "price": price, "quantity": 1.0})
+                    items.append({"raw_name": name, "price": price, "quantity": pending_qty})
+                pending_qty = 1.0
     return items
 
 
@@ -75,8 +84,10 @@ def parse_netto_pdf(filepath: str) -> list[dict]:
                     in_products = False
                     continue
                 if in_products:
-                    # Detect standalone quantity multiplier: "3 x" or "3x"
-                    qty_match = re.match(r"^(\d+)\s*[xX]\s*$", line)
+                    # Detect standalone quantity multiplier lines:
+                    # "3 x", "3x", or "3 x  1,99 A" (with optional per-item price appended)
+                    # These lines are NEVER actual product names.
+                    qty_match = re.match(r"^(\d+)\s*[xX]\s*(?:[\d]+[,\.][\d]{2}\s*[A-Z]?)?\s*$", line)
                     if qty_match:
                         pending_qty = float(qty_match.group(1))
                         continue  # don't emit — apply to the next product line
