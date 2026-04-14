@@ -213,11 +213,6 @@ export default function Receipts() {
   const fileRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
 
-  const { data: receipts, isLoading } = useQuery<ReceiptSummary[]>({
-    queryKey: ['receipts'],
-    queryFn: () => getReceipts().then(r => r.data),
-  })
-
   const applyMappings = useMutation({
     mutationFn: () => applyAllMappings(),
     onSuccess: (res) => {
@@ -234,7 +229,7 @@ export default function Receipts() {
     queryFn: () => getReceipts().then(r => r.data),
   })
 
-  const handleUpload = async () => {
+  const handleUpload= async () => {
     if (!file) return
     setUploading(true)
     setUploadError('')

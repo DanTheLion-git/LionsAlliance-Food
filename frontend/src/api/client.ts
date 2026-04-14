@@ -52,4 +52,5 @@ export const getConsumption = (date?: string, person?: string) =>
 export const getConsumptionSummary = (date?: string) =>
   api.get('/consumption/summary', { params: date ? { date } : {} })
 export const createConsumption = (entries: object[]) => api.post('/consumption', entries)
+export const deleteConsumption = (id: number) => api.delete(`/consumption/${id}`)
 export const applyAllMappings = () => api.post('/receipts/apply-all-mappings')
