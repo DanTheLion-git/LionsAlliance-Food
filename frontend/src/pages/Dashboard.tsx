@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getConsumptionSummary, getExpiringInventory, getInventory, getGoals, getNutritionHistory } from '../api/client'
+import { getConsumptionSummary, getExpiringInventory, getGoals, getNutritionHistory } from '../api/client'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 
 type Goals = Record<string, { calories: number; protein: number; carbs: number; fat: number; fiber: number }>
@@ -78,16 +78,10 @@ export default function Dashboard() {
     queryKey: ['expiring', 7],
     queryFn: () => getExpiringInventory(7).then(r => r.data),
   })
-  const { data: allInventory } = useQuery<InventoryItem[]>({
-    queryKey: ['inventory', false],
-    queryFn: () => getInventory(false).then(r => r.data),
-  })
   const { data: history } = useQuery({
     queryKey: ['nutrition', 'history'],
     queryFn: () => getNutritionHistory().then(r => r.data),
   })
-
-  const lowStock = (allInventory ?? []).filter(i => i.status === 'in_stock' && (i.quantity_remaining ?? i.quantity) <= 1)
 
   return (
     <div className="space-y-6">
@@ -106,8 +100,8 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Expiring + Low Stock */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Expiring Soon */}
+      <div className="grid grid-cols-1 gap-4">
         {expiring && expiring.length > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <h2 className="font-semibold text-amber-800 mb-2">⚠ Expiring This Week ({expiring.length})</h2>
@@ -124,20 +118,6 @@ export default function Dashboard() {
                 )
               })}
               {expiring.length > 5 && <p className="text-xs text-amber-600 mt-1">+{expiring.length - 5} more → see Inventory</p>}
-            </div>
-          </div>
-        )}
-        {lowStock.length > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <h2 className="font-semibold text-blue-800 mb-2">📦 Low Stock ({lowStock.length})</h2>
-            <div className="space-y-1">
-              {lowStock.slice(0, 5).map(item => (
-                <div key={item.id} className="flex items-center justify-between text-sm bg-white rounded px-2 py-1">
-                  <span className="font-medium truncate">{item.food_name ?? 'Unknown'}</span>
-                  <span className="text-xs text-gray-400 ml-2 shrink-0">{item.quantity_remaining ?? item.quantity} {item.unit}</span>
-                </div>
-              ))}
-              {lowStock.length > 5 && <p className="text-xs text-blue-600 mt-1">+{lowStock.length - 5} more → see Inventory</p>}
             </div>
           </div>
         )}
