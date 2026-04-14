@@ -54,12 +54,12 @@ async def upload_receipt(
     db: AsyncSession = Depends(get_db),
 ):
     store = store.lower()
-    if store not in ("jumbo", "netto"):
-        raise HTTPException(status_code=400, detail="store must be 'jumbo' or 'netto'")
+    if store not in ("jumbo", "netto", "albert_heijn", "lidl", "aldi"):
+        raise HTTPException(status_code=400, detail="store must be one of: jumbo, netto, albert_heijn, lidl, aldi")
 
     upload_dir = os.path.join(UPLOAD_BASE, store)
     os.makedirs(upload_dir, exist_ok=True)
-    filename = file.filename or "upload"
+    filename = os.path.basename(file.filename or "upload")
     filepath = os.path.join(upload_dir, filename)
 
     contents = await file.read()
@@ -71,8 +71,16 @@ async def upload_receipt(
         if store == "jumbo":
             parsed_items = parse_jumbo_png(filepath)
             purchase_date = None
-        else:
+        elif store == "netto":
             parsed_items, purchase_date = parse_netto_pdf(filepath)
+        elif store == "albert_heijn":
+            parsed_items, purchase_date = parse_albert_heijn_pdf(filepath)
+        elif store == "lidl":
+            parsed_items, purchase_date = parse_lidl_pdf(filepath)
+        elif store == "aldi":
+            parsed_items, purchase_date = parse_aldi_pdf(filepath)
+        else:
+            parsed_items, purchase_date = [], None
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Parsing failed: {e}")
 
@@ -330,10 +338,11 @@ async def delete_receipt(receipt_id: int, db: AsyncSession = Depends(get_db)):
     receipt = result.scalar_one_or_none()
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
-    # Null out receipt_id on inventory items so they are PRESERVED
+    # Null out receipt_id AND receipt_item_id on inventory items so they are PRESERVED
     inv_items = await db.execute(select(InventoryItem).where(InventoryItem.receipt_id == receipt_id))
     for inv in inv_items.scalars().all():
         inv.receipt_id = None
+        inv.receipt_item_id = None
     # Delete receipt items (parsed lines)
     items = await db.execute(select(ReceiptItem).where(ReceiptItem.receipt_id == receipt_id))
     for item in items.scalars().all():

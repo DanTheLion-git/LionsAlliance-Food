@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from database import get_db
 from models.consumption import ConsumptionLog
@@ -60,8 +60,8 @@ async def consumption_summary(
         d = datetime.utcnow().date()
 
     query = select(ConsumptionLog).where(
-        ConsumptionLog.consumed_at >= datetime(d.year, d.month, d.day, 0, 0, 0),
-        ConsumptionLog.consumed_at < datetime(d.year, d.month, d.day, 23, 59, 59),
+        ConsumptionLog.consumed_at >= datetime(d.year, d.month, d.day),
+        ConsumptionLog.consumed_at < datetime(d.year, d.month, d.day) + timedelta(days=1),
     )
     result = await db.execute(query)
     logs = result.scalars().all()
@@ -91,8 +91,8 @@ async def list_consumption(
         try:
             d = datetime.strptime(date_str, "%Y-%m-%d").date()
             query = query.where(
-                ConsumptionLog.consumed_at >= datetime(d.year, d.month, d.day, 0, 0, 0),
-                ConsumptionLog.consumed_at < datetime(d.year, d.month, d.day, 23, 59, 59),
+                ConsumptionLog.consumed_at >= datetime(d.year, d.month, d.day),
+                ConsumptionLog.consumed_at < datetime(d.year, d.month, d.day) + timedelta(days=1),
             )
         except ValueError:
             pass
@@ -136,9 +136,12 @@ async def create_consumption(data: list[ConsumptionCreate], db: AsyncSession = D
             food_r = await db.execute(select(FoodItem).where(FoodItem.id == food_item_id))
             food = food_r.scalar_one_or_none()
             if food and food.calories_per_100g:
-                # For simplicity: treat amount as grams if unit is g, else as count
-                # This is a rough estimate — proper tracking needs portion sizes
-                factor = entry.amount / 100.0 if entry.unit == "g" else entry.amount
+                if entry.unit == "g":
+                    factor = entry.amount / 100.0
+                elif entry.unit == "piece" and food.serving_size_g:
+                    factor = (food.serving_size_g * entry.amount) / 100.0
+                else:
+                    factor = entry.amount
                 calories = round((food.calories_per_100g or 0) * factor, 1)
                 protein = round((food.protein_per_100g or 0) * factor, 1)
                 carbs = round((food.carbs_per_100g or 0) * factor, 1)

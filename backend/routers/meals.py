@@ -150,7 +150,8 @@ async def delete_meal(meal_id: int, db: AsyncSession = Depends(get_db)):
     meal = result.scalar_one_or_none()
     if not meal:
         raise HTTPException(status_code=404, detail="Meal not found")
-    # Cascade delete ingredients
+    # Cascade delete logs and ingredients before deleting meal
+    await db.execute(delete(MealLog).where(MealLog.meal_id == meal_id))
     await db.execute(delete(MealIngredient).where(MealIngredient.meal_id == meal_id))
     await db.delete(meal)
     await db.commit()

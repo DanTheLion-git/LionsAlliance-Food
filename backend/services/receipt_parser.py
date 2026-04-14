@@ -211,7 +211,7 @@ def parse_albert_heijn_pdf(filepath: str) -> list[dict]:
                             items.append({"raw_name": name, "price": per_item, "quantity": pending_qty,
                                           "parsed_weight_g": parse_weight_from_name(name)})
                         pending_qty = 1.0
-    return items
+    return items, None
 
 
 def parse_lidl_pdf(filepath: str) -> list[dict]:
