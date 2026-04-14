@@ -1,7 +1,21 @@
+import os
 import re
 import pytesseract
 from PIL import Image
 import pdfplumber
+from datetime import datetime
+
+
+def extract_netto_date(filepath: str) -> datetime | None:
+    """Parse date from filename like Netto_Kassenbon_20240414-143022.pdf"""
+    basename = os.path.basename(filepath)
+    m = re.search(r"(\d{8})-(\d{6})", basename)
+    if m:
+        try:
+            return datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
+        except ValueError:
+            pass
+    return None
 
 
 def parse_jumbo_png(filepath: str) -> list[dict]:
@@ -52,7 +66,7 @@ def parse_jumbo_png(filepath: str) -> list[dict]:
     return items
 
 
-def parse_netto_pdf(filepath: str) -> list[dict]:
+def parse_netto_pdf(filepath: str) -> tuple[list[dict], datetime | None]:
     """Extract product lines from a Netto German receipt PDF.
 
     Netto uses a two-line format for multiples:
@@ -110,4 +124,4 @@ def parse_netto_pdf(filepath: str) -> list[dict]:
                                 "quantity": pending_qty,
                             })
                         pending_qty = 1.0  # reset after consuming
-    return items
+    return items, extract_netto_date(filepath)

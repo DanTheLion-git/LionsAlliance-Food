@@ -69,13 +69,14 @@ async def upload_receipt(
     try:
         if store == "jumbo":
             parsed_items = parse_jumbo_png(filepath)
+            purchase_date = None
         else:
-            parsed_items = parse_netto_pdf(filepath)
+            parsed_items, purchase_date = parse_netto_pdf(filepath)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Parsing failed: {e}")
 
     # Create Receipt record
-    receipt = Receipt(store=store, filename=filename, parsed=True)
+    receipt = Receipt(store=store, filename=filename, parsed=True, purchase_date=purchase_date)
     db.add(receipt)
     await db.flush()  # get receipt.id
 
@@ -98,8 +99,9 @@ async def upload_receipt(
                 food_item_id=food_id,
                 receipt_id=receipt.id,
                 quantity=p.get("quantity", 1.0),
+                quantity_remaining=p.get("quantity", 1.0),
                 unit="piece",
-                purchase_date=receipt.upload_date,
+                purchase_date=purchase_date or receipt.upload_date,
             )
             db.add(inv)
             added_to_inventory = True

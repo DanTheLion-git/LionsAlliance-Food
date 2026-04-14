@@ -12,8 +12,12 @@ export const deleteFood = (id: number) => api.delete(`/foods/${id}`)
 export const searchOFF = (q: string) => api.get('/foods/search/off', { params: { q } })
 
 // Inventory
-export const getInventory = () => api.get('/inventory')
+export const getInventory = (includeAll = false) =>
+  api.get('/inventory', { params: includeAll ? { include_all: true } : {} })
+export const getExpiringInventory = (days = 7) => api.get('/inventory/expiring', { params: { days } })
 export const createInventory = (data: object) => api.post('/inventory', data)
+export const updateInventory = (id: number, data: object) => api.put(`/inventory/${id}`, data)
+export const updateInventoryStatus = (id: number, data: object) => api.patch(`/inventory/${id}/status`, data)
 export const deleteInventory = (id: number) => api.delete(`/inventory/${id}`)
 
 // Receipts

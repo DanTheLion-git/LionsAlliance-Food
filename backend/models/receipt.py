@@ -9,6 +9,7 @@ class Receipt(Base):
     store = Column(String, nullable=False)  # jumbo, netto, manual
     filename = Column(String, nullable=True)
     upload_date = Column(DateTime, server_default=func.now())
+    purchase_date = Column(DateTime, nullable=True)
     parsed = Column(Boolean, default=False)
     total_price = Column(Float, nullable=True)
 

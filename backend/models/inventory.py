@@ -15,3 +15,7 @@ class InventoryItem(Base):
     expiry_date = Column(DateTime, nullable=True)
     notes = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+    status = Column(String, default="in_stock")  # in_stock, consumed, discarded
+    quantity_remaining = Column(Float, nullable=True)
+    discard_reason = Column(String, nullable=True)  # expired, overcooked, bad, other
+    consumed_date = Column(DateTime, nullable=True)

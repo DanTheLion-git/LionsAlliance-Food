@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from database import get_db
 from models.inventory import InventoryItem
@@ -28,6 +28,16 @@ class InventoryItemUpdate(BaseModel):
     purchase_date: Optional[datetime] = None
     expiry_date: Optional[datetime] = None
     notes: Optional[str] = None
+    status: Optional[str] = None
+    quantity_remaining: Optional[float] = None
+    discard_reason: Optional[str] = None
+    consumed_date: Optional[datetime] = None
+
+
+class StatusUpdate(BaseModel):
+    status: str
+    quantity_remaining: Optional[float] = None
+    discard_reason: Optional[str] = None
 
 
 class InventoryItemRead(BaseModel):
@@ -40,6 +50,10 @@ class InventoryItemRead(BaseModel):
     expiry_date: Optional[datetime]
     notes: Optional[str]
     created_at: Optional[datetime]
+    status: Optional[str] = "in_stock"
+    quantity_remaining: Optional[float] = None
+    discard_reason: Optional[str] = None
+    consumed_date: Optional[datetime] = None
     # joined food info
     food_name: Optional[str] = None
     food_brand: Optional[str] = None
@@ -52,24 +66,49 @@ class InventoryItemRead(BaseModel):
         from_attributes = True
 
 
+def _enrich(row: InventoryItemRead, food: Optional[FoodItem]) -> InventoryItemRead:
+    if food:
+        row.food_name = food.name
+        row.food_brand = food.brand
+        row.calories_per_100g = food.calories_per_100g
+        row.protein_per_100g = food.protein_per_100g
+        row.carbs_per_100g = food.carbs_per_100g
+        row.fat_per_100g = food.fat_per_100g
+    return row
+
+
+@router.get("/expiring", response_model=list[InventoryItemRead])
+async def get_expiring_items(days: int = 7, db: AsyncSession = Depends(get_db)):
+    cutoff = datetime.utcnow() + timedelta(days=days)
+    result = await db.execute(
+        select(InventoryItem)
+        .where(InventoryItem.status == "in_stock")
+        .where(InventoryItem.expiry_date != None)
+        .where(InventoryItem.expiry_date <= cutoff)
+        .order_by(InventoryItem.expiry_date.asc())
+    )
+    items = result.scalars().all()
+    enriched = []
+    for item in items:
+        food_result = await db.execute(select(FoodItem).where(FoodItem.id == item.food_item_id))
+        food = food_result.scalar_one_or_none()
+        enriched.append(_enrich(InventoryItemRead.model_validate(item), food))
+    return enriched
+
+
 @router.get("/", response_model=list[InventoryItemRead])
-async def list_inventory(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(InventoryItem))
+async def list_inventory(include_all: bool = Query(False, alias="include_all"), db: AsyncSession = Depends(get_db)):
+    query = select(InventoryItem)
+    if not include_all:
+        query = query.where(InventoryItem.status != "discarded")
+    result = await db.execute(query)
     items = result.scalars().all()
 
     enriched = []
     for item in items:
         food_result = await db.execute(select(FoodItem).where(FoodItem.id == item.food_item_id))
         food = food_result.scalar_one_or_none()
-        row = InventoryItemRead.model_validate(item)
-        if food:
-            row.food_name = food.name
-            row.food_brand = food.brand
-            row.calories_per_100g = food.calories_per_100g
-            row.protein_per_100g = food.protein_per_100g
-            row.carbs_per_100g = food.carbs_per_100g
-            row.fat_per_100g = food.fat_per_100g
-        enriched.append(row)
+        enriched.append(_enrich(InventoryItemRead.model_validate(item), food))
     return enriched
 
 
@@ -79,22 +118,16 @@ async def create_inventory_item(data: InventoryItemCreate, db: AsyncSession = De
     if not food_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Food item not found")
 
-    item = InventoryItem(**data.model_dump())
+    dump = data.model_dump()
+    dump.setdefault("quantity_remaining", dump.get("quantity", 1.0))
+    item = InventoryItem(**dump)
     db.add(item)
     await db.commit()
     await db.refresh(item)
 
     food_result = await db.execute(select(FoodItem).where(FoodItem.id == item.food_item_id))
     food = food_result.scalar_one_or_none()
-    row = InventoryItemRead.model_validate(item)
-    if food:
-        row.food_name = food.name
-        row.food_brand = food.brand
-        row.calories_per_100g = food.calories_per_100g
-        row.protein_per_100g = food.protein_per_100g
-        row.carbs_per_100g = food.carbs_per_100g
-        row.fat_per_100g = food.fat_per_100g
-    return row
+    return _enrich(InventoryItemRead.model_validate(item), food)
 
 
 @router.get("/{item_id}", response_model=InventoryItemRead)
@@ -106,15 +139,7 @@ async def get_inventory_item(item_id: int, db: AsyncSession = Depends(get_db)):
 
     food_result = await db.execute(select(FoodItem).where(FoodItem.id == item.food_item_id))
     food = food_result.scalar_one_or_none()
-    row = InventoryItemRead.model_validate(item)
-    if food:
-        row.food_name = food.name
-        row.food_brand = food.brand
-        row.calories_per_100g = food.calories_per_100g
-        row.protein_per_100g = food.protein_per_100g
-        row.carbs_per_100g = food.carbs_per_100g
-        row.fat_per_100g = food.fat_per_100g
-    return row
+    return _enrich(InventoryItemRead.model_validate(item), food)
 
 
 @router.put("/{item_id}", response_model=InventoryItemRead)
@@ -130,11 +155,30 @@ async def update_inventory_item(item_id: int, data: InventoryItemUpdate, db: Asy
 
     food_result = await db.execute(select(FoodItem).where(FoodItem.id == item.food_item_id))
     food = food_result.scalar_one_or_none()
-    row = InventoryItemRead.model_validate(item)
-    if food:
-        row.food_name = food.name
-        row.food_brand = food.brand
-    return row
+    return _enrich(InventoryItemRead.model_validate(item), food)
+
+
+@router.patch("/{item_id}/status", response_model=InventoryItemRead)
+async def update_item_status(item_id: int, data: StatusUpdate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(InventoryItem).where(InventoryItem.id == item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+
+    item.status = data.status
+    if data.quantity_remaining is not None:
+        item.quantity_remaining = data.quantity_remaining
+    if data.discard_reason is not None:
+        item.discard_reason = data.discard_reason
+    if data.status in ("consumed", "discarded"):
+        item.consumed_date = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(item)
+
+    food_result = await db.execute(select(FoodItem).where(FoodItem.id == item.food_item_id))
+    food = food_result.scalar_one_or_none()
+    return _enrich(InventoryItemRead.model_validate(item), food)
 
 
 @router.delete("/{item_id}")
@@ -146,3 +190,4 @@ async def delete_inventory_item(item_id: int, db: AsyncSession = Depends(get_db)
     await db.delete(item)
     await db.commit()
     return {"ok": True}
+
