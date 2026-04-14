@@ -23,3 +23,14 @@ class ReceiptItem(Base):
     price = Column(Float, nullable=True)
     food_item_id = Column(Integer, ForeignKey("food_items.id"), nullable=True)
     reviewed = Column(Boolean, default=False)
+
+
+class ReceiptNameMapping(Base):
+    """Remembers raw_name → food_item_id so future receipts auto-link."""
+    __tablename__ = "receipt_name_mappings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    raw_name = Column(String, nullable=False, unique=True, index=True)
+    food_item_id = Column(Integer, ForeignKey("food_items.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

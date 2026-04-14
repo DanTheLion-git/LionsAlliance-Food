@@ -44,7 +44,15 @@ def parse_jumbo_png(filepath: str) -> list[dict]:
 
 
 def parse_netto_pdf(filepath: str) -> list[dict]:
-    """Extract product lines from a Netto German receipt PDF."""
+    """Extract product lines from a Netto German receipt PDF.
+
+    Netto uses a two-line format for multiples:
+        3 x                          <- standalone quantity line
+        Capri Sun Multi 10x0,2L PK   5,97 A  <- product + combined total price
+
+    We detect the 'N x' line, hold the quantity, apply it to the next product
+    line, and calculate the per-item price (total / qty).
+    """
     items = []
     with pdfplumber.open(filepath) as pdf:
         for page in pdf.pages:
@@ -52,6 +60,8 @@ def parse_netto_pdf(filepath: str) -> list[dict]:
             lines = text.split("\n")
 
             in_products = False
+            pending_qty = 1.0  # carries over from a "N x" line to the next product
+
             for line in lines:
                 line = line.strip()
                 if not line:
@@ -65,15 +75,28 @@ def parse_netto_pdf(filepath: str) -> list[dict]:
                     in_products = False
                     continue
                 if in_products:
-                    # Typical Netto line: "Produkt name    1,99 A" or "Produkt  1 x 1,99  1,99"
+                    # Detect standalone quantity multiplier: "3 x" or "3x"
+                    qty_match = re.match(r"^(\d+)\s*[xX]\s*$", line)
+                    if qty_match:
+                        pending_qty = float(qty_match.group(1))
+                        continue  # don't emit — apply to the next product line
+
+                    # Typical product line: "Name    1,99 A"
                     m = re.match(r"^(.+?)\s+([-]?\d+[,\.]\d{2})\s*[A-Z]?\s*$", line)
                     if m:
                         name = m.group(1).strip()
                         price_str = m.group(2).replace(",", ".")
                         try:
-                            price = float(price_str)
+                            total_price = float(price_str)
                         except ValueError:
-                            price = None
-                        if price and price > 0 and len(name) > 2:
-                            items.append({"raw_name": name, "price": price, "quantity": 1.0})
+                            pending_qty = 1.0
+                            continue
+                        if total_price > 0 and len(name) > 2:
+                            per_item = round(total_price / pending_qty, 2)
+                            items.append({
+                                "raw_name": name,
+                                "price": per_item,
+                                "quantity": pending_qty,
+                            })
+                        pending_qty = 1.0  # reset after consuming
     return items

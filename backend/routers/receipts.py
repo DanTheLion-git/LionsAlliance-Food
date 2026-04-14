@@ -7,7 +7,7 @@ from typing import Optional
 from datetime import datetime
 
 from database import get_db
-from models.receipt import Receipt, ReceiptItem
+from models.receipt import Receipt, ReceiptItem, ReceiptNameMapping
 from models.food import FoodItem
 from models.inventory import InventoryItem
 from services.receipt_parser import parse_jumbo_png, parse_netto_pdf
@@ -82,36 +82,46 @@ async def upload_receipt(
 
     created_items = []
     for p in parsed_items:
-        # Try nutrition lookup and auto-create food item
         food_id = None
-        nutrition = await lookup_food(p["raw_name"])
-        if nutrition:
-            # Check if food with same barcode already exists
-            barcode = nutrition.get("barcode") or None
-            if barcode:
-                existing = await db.execute(select(FoodItem).where(FoodItem.barcode == barcode))
-                food = existing.scalar_one_or_none()
-            else:
-                food = None
+        reviewed = False
 
-            if not food:
-                food = FoodItem(
-                    name=nutrition["name"],
-                    brand=nutrition.get("brand"),
-                    barcode=barcode or None,
-                    off_id=nutrition.get("off_id"),
-                    calories_per_100g=nutrition.get("calories_per_100g"),
-                    protein_per_100g=nutrition.get("protein_per_100g"),
-                    carbs_per_100g=nutrition.get("carbs_per_100g"),
-                    fat_per_100g=nutrition.get("fat_per_100g"),
-                    fiber_per_100g=nutrition.get("fiber_per_100g"),
-                    sugar_per_100g=nutrition.get("sugar_per_100g"),
-                    sodium_per_100g=nutrition.get("sodium_per_100g"),
-                    source="open_food_facts",
-                )
-                db.add(food)
-                await db.flush()
-            food_id = food.id
+        # 1. Check known name mapping first (user-confirmed links take priority)
+        mapping_result = await db.execute(
+            select(ReceiptNameMapping).where(ReceiptNameMapping.raw_name == p["raw_name"])
+        )
+        mapping = mapping_result.scalar_one_or_none()
+        if mapping:
+            food_id = mapping.food_item_id
+            reviewed = True
+        else:
+            # 2. Fall back to Open Food Facts lookup
+            nutrition = await lookup_food(p["raw_name"])
+            if nutrition:
+                barcode = nutrition.get("barcode") or None
+                if barcode:
+                    existing = await db.execute(select(FoodItem).where(FoodItem.barcode == barcode))
+                    food = existing.scalar_one_or_none()
+                else:
+                    food = None
+
+                if not food:
+                    food = FoodItem(
+                        name=nutrition["name"],
+                        brand=nutrition.get("brand"),
+                        barcode=barcode or None,
+                        off_id=nutrition.get("off_id"),
+                        calories_per_100g=nutrition.get("calories_per_100g"),
+                        protein_per_100g=nutrition.get("protein_per_100g"),
+                        carbs_per_100g=nutrition.get("carbs_per_100g"),
+                        fat_per_100g=nutrition.get("fat_per_100g"),
+                        fiber_per_100g=nutrition.get("fiber_per_100g"),
+                        sugar_per_100g=nutrition.get("sugar_per_100g"),
+                        sodium_per_100g=nutrition.get("sodium_per_100g"),
+                        source="open_food_facts",
+                    )
+                    db.add(food)
+                    await db.flush()
+                food_id = food.id
 
         ri = ReceiptItem(
             receipt_id=receipt.id,
@@ -119,7 +129,7 @@ async def upload_receipt(
             price=p.get("price"),
             quantity=p.get("quantity", 1.0),
             food_item_id=food_id,
-            reviewed=food_id is not None,
+            reviewed=reviewed,
         )
         db.add(ri)
         created_items.append(ri)
@@ -201,8 +211,51 @@ async def link_receipt_item(
 
     item.food_item_id = body.food_item_id
     item.reviewed = True
+
+    # Save/update name mapping so future receipts auto-link this raw_name
+    mapping_result = await db.execute(
+        select(ReceiptNameMapping).where(ReceiptNameMapping.raw_name == item.raw_name)
+    )
+    mapping = mapping_result.scalar_one_or_none()
+    if mapping:
+        mapping.food_item_id = body.food_item_id
+    else:
+        db.add(ReceiptNameMapping(raw_name=item.raw_name, food_item_id=body.food_item_id))
+
     await db.commit()
     return {"ok": True, "food_item_id": body.food_item_id}
+
+
+@router.delete("/{receipt_id}/items/{item_id}")
+async def delete_receipt_item(
+    receipt_id: int,
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(ReceiptItem).where(ReceiptItem.id == item_id, ReceiptItem.receipt_id == receipt_id)
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Receipt item not found")
+    await db.delete(item)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{receipt_id}")
+async def delete_receipt(receipt_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Receipt).where(Receipt.id == receipt_id))
+    receipt = result.scalar_one_or_none()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    # Delete all items first
+    items = await db.execute(select(ReceiptItem).where(ReceiptItem.receipt_id == receipt_id))
+    for item in items.scalars().all():
+        await db.delete(item)
+    await db.delete(receipt)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/{receipt_id}/items/{item_id}/add-to-inventory")

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getReceipts, uploadReceipt, getReceipt,
   linkReceiptItem, addReceiptItemToInventory,
+  deleteReceiptItem, deleteReceipt,
   getFoods, createFood, searchOFF
 } from '../api/client'
 
@@ -115,6 +116,16 @@ function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['inventory'] }),
   })
 
+  const deleteItem = useMutation({
+    mutationFn: (itemId: number) => deleteReceiptItem(receipt.id, itemId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['receipt', receipt.id] }),
+  })
+
+  const deleteThisReceipt = useMutation({
+    mutationFn: () => deleteReceipt(receipt.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['receipts'] }),
+  })
+
   return (
     <div className="bg-white rounded-xl shadow overflow-hidden">
       <button onClick={() => setExpanded(e => !e)}
@@ -125,7 +136,14 @@ function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
           <span className="text-gray-500 text-sm">{receipt.item_count} items</span>
           {receipt.parsed && <span className="text-green-600 text-xs bg-green-50 px-2 py-0.5 rounded-full">Parsed</span>}
         </div>
-        <span className="text-gray-400">{expanded ? '▲' : '▼'}</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={e => { e.stopPropagation(); if (confirm('Delete this receipt?')) deleteThisReceipt.mutate() }}
+            className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded">
+            🗑
+          </button>
+          <span className="text-gray-400">{expanded ? '▲' : '▼'}</span>
+        </div>
       </button>
       {expanded && detail && (
         <div className="border-t divide-y">
@@ -149,6 +167,10 @@ function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
                     + Inventory
                   </button>
                 )}
+                <button onClick={() => deleteItem.mutate(item.id)}
+                  className="text-xs text-red-400 hover:text-red-600 px-1 py-1 rounded">
+                  🗑
+                </button>
               </div>
             </div>
           ))}

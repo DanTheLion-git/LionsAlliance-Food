@@ -25,6 +25,9 @@ export const linkReceiptItem = (receiptId: number, itemId: number, foodItemId: n
   api.post(`/receipts/${receiptId}/items/${itemId}/link`, { food_item_id: foodItemId })
 export const addReceiptItemToInventory = (receiptId: number, itemId: number, data: object) =>
   api.post(`/receipts/${receiptId}/items/${itemId}/add-to-inventory`, data)
+export const deleteReceiptItem = (receiptId: number, itemId: number) =>
+  api.delete(`/receipts/${receiptId}/items/${itemId}`)
+export const deleteReceipt = (receiptId: number) => api.delete(`/receipts/${receiptId}`)
 
 // Meals
 export const getMeals = () => api.get('/meals')
