@@ -1,0 +1,233 @@
+import os
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+from database import get_db
+from models.receipt import Receipt, ReceiptItem
+from models.food import FoodItem
+from models.inventory import InventoryItem
+from services.receipt_parser import parse_jumbo_png, parse_netto_pdf
+from services.nutrition_lookup import lookup_food
+
+router = APIRouter()
+
+UPLOAD_BASE = "/app/uploads"
+
+
+class LinkItemBody(BaseModel):
+    food_item_id: int
+
+
+class AddToInventoryBody(BaseModel):
+    quantity: float = 1.0
+    unit: str = "g"
+
+
+@router.get("/")
+async def list_receipts(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Receipt).order_by(Receipt.upload_date.desc()))
+    receipts = result.scalars().all()
+    out = []
+    for r in receipts:
+        items_result = await db.execute(select(ReceiptItem).where(ReceiptItem.receipt_id == r.id))
+        items = items_result.scalars().all()
+        out.append({
+            "id": r.id,
+            "store": r.store,
+            "filename": r.filename,
+            "upload_date": r.upload_date,
+            "parsed": r.parsed,
+            "total_price": r.total_price,
+            "item_count": len(items),
+        })
+    return out
+
+
+@router.post("/upload")
+async def upload_receipt(
+    store: str = Form(...),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    store = store.lower()
+    if store not in ("jumbo", "netto"):
+        raise HTTPException(status_code=400, detail="store must be 'jumbo' or 'netto'")
+
+    upload_dir = os.path.join(UPLOAD_BASE, store)
+    os.makedirs(upload_dir, exist_ok=True)
+    filename = file.filename or "upload"
+    filepath = os.path.join(upload_dir, filename)
+
+    contents = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(contents)
+
+    # Parse receipt
+    try:
+        if store == "jumbo":
+            parsed_items = parse_jumbo_png(filepath)
+        else:
+            parsed_items = parse_netto_pdf(filepath)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Parsing failed: {e}")
+
+    # Create Receipt record
+    receipt = Receipt(store=store, filename=filename, parsed=True)
+    db.add(receipt)
+    await db.flush()  # get receipt.id
+
+    created_items = []
+    for p in parsed_items:
+        # Try nutrition lookup and auto-create food item
+        food_id = None
+        nutrition = await lookup_food(p["raw_name"])
+        if nutrition:
+            # Check if food with same barcode already exists
+            barcode = nutrition.get("barcode") or None
+            if barcode:
+                existing = await db.execute(select(FoodItem).where(FoodItem.barcode == barcode))
+                food = existing.scalar_one_or_none()
+            else:
+                food = None
+
+            if not food:
+                food = FoodItem(
+                    name=nutrition["name"],
+                    brand=nutrition.get("brand"),
+                    barcode=barcode or None,
+                    off_id=nutrition.get("off_id"),
+                    calories_per_100g=nutrition.get("calories_per_100g"),
+                    protein_per_100g=nutrition.get("protein_per_100g"),
+                    carbs_per_100g=nutrition.get("carbs_per_100g"),
+                    fat_per_100g=nutrition.get("fat_per_100g"),
+                    fiber_per_100g=nutrition.get("fiber_per_100g"),
+                    sugar_per_100g=nutrition.get("sugar_per_100g"),
+                    sodium_per_100g=nutrition.get("sodium_per_100g"),
+                    source="open_food_facts",
+                )
+                db.add(food)
+                await db.flush()
+            food_id = food.id
+
+        ri = ReceiptItem(
+            receipt_id=receipt.id,
+            raw_name=p["raw_name"],
+            price=p.get("price"),
+            quantity=p.get("quantity", 1.0),
+            food_item_id=food_id,
+            reviewed=food_id is not None,
+        )
+        db.add(ri)
+        created_items.append(ri)
+
+    await db.commit()
+    await db.refresh(receipt)
+
+    return {
+        "id": receipt.id,
+        "store": receipt.store,
+        "filename": receipt.filename,
+        "parsed": receipt.parsed,
+        "items": [
+            {"id": i.id, "raw_name": i.raw_name, "price": i.price, "quantity": i.quantity, "food_item_id": i.food_item_id}
+            for i in created_items
+        ],
+    }
+
+
+@router.get("/{receipt_id}")
+async def get_receipt(receipt_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Receipt).where(Receipt.id == receipt_id))
+    receipt = result.scalar_one_or_none()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    items_result = await db.execute(select(ReceiptItem).where(ReceiptItem.receipt_id == receipt_id))
+    items = items_result.scalars().all()
+
+    enriched_items = []
+    for item in items:
+        food = None
+        if item.food_item_id:
+            food_result = await db.execute(select(FoodItem).where(FoodItem.id == item.food_item_id))
+            food = food_result.scalar_one_or_none()
+        enriched_items.append({
+            "id": item.id,
+            "raw_name": item.raw_name,
+            "price": item.price,
+            "quantity": item.quantity,
+            "reviewed": item.reviewed,
+            "food_item_id": item.food_item_id,
+            "food": {
+                "id": food.id,
+                "name": food.name,
+                "brand": food.brand,
+                "calories_per_100g": food.calories_per_100g,
+            } if food else None,
+        })
+
+    return {
+        "id": receipt.id,
+        "store": receipt.store,
+        "filename": receipt.filename,
+        "upload_date": receipt.upload_date,
+        "parsed": receipt.parsed,
+        "total_price": receipt.total_price,
+        "items": enriched_items,
+    }
+
+
+@router.post("/{receipt_id}/items/{item_id}/link")
+async def link_receipt_item(
+    receipt_id: int,
+    item_id: int,
+    body: LinkItemBody,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(ReceiptItem).where(ReceiptItem.id == item_id, ReceiptItem.receipt_id == receipt_id)
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Receipt item not found")
+
+    food_result = await db.execute(select(FoodItem).where(FoodItem.id == body.food_item_id))
+    if not food_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Food item not found")
+
+    item.food_item_id = body.food_item_id
+    item.reviewed = True
+    await db.commit()
+    return {"ok": True, "food_item_id": body.food_item_id}
+
+
+@router.post("/{receipt_id}/items/{item_id}/add-to-inventory")
+async def add_receipt_item_to_inventory(
+    receipt_id: int,
+    item_id: int,
+    body: AddToInventoryBody,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(ReceiptItem).where(ReceiptItem.id == item_id, ReceiptItem.receipt_id == receipt_id)
+    )
+    ri = result.scalar_one_or_none()
+    if not ri:
+        raise HTTPException(status_code=404, detail="Receipt item not found")
+    if not ri.food_item_id:
+        raise HTTPException(status_code=400, detail="Receipt item not linked to a food item yet")
+
+    inv = InventoryItem(
+        food_item_id=ri.food_item_id,
+        receipt_id=receipt_id,
+        quantity=body.quantity,
+        unit=body.unit,
+    )
+    db.add(inv)
+    await db.commit()
+    await db.refresh(inv)
+    return {"ok": True, "inventory_item_id": inv.id}
