@@ -11,7 +11,6 @@ from models.receipt import Receipt, ReceiptItem, ReceiptNameMapping
 from models.food import FoodItem
 from models.inventory import InventoryItem
 from services.receipt_parser import parse_jumbo_png, parse_netto_pdf
-from services.nutrition_lookup import lookup_food
 
 router = APIRouter()
 
@@ -84,8 +83,9 @@ async def upload_receipt(
     for p in parsed_items:
         food_id = None
         reviewed = False
+        added_to_inventory = False
 
-        # 1. Check known name mapping first (user-confirmed links take priority)
+        # Check known name mapping (user-confirmed links only)
         mapping_result = await db.execute(
             select(ReceiptNameMapping).where(ReceiptNameMapping.raw_name == p["raw_name"])
         )
@@ -93,35 +93,16 @@ async def upload_receipt(
         if mapping:
             food_id = mapping.food_item_id
             reviewed = True
-        else:
-            # 2. Fall back to Open Food Facts lookup
-            nutrition = await lookup_food(p["raw_name"])
-            if nutrition:
-                barcode = nutrition.get("barcode") or None
-                if barcode:
-                    existing = await db.execute(select(FoodItem).where(FoodItem.barcode == barcode))
-                    food = existing.scalar_one_or_none()
-                else:
-                    food = None
-
-                if not food:
-                    food = FoodItem(
-                        name=nutrition["name"],
-                        brand=nutrition.get("brand"),
-                        barcode=barcode or None,
-                        off_id=nutrition.get("off_id"),
-                        calories_per_100g=nutrition.get("calories_per_100g"),
-                        protein_per_100g=nutrition.get("protein_per_100g"),
-                        carbs_per_100g=nutrition.get("carbs_per_100g"),
-                        fat_per_100g=nutrition.get("fat_per_100g"),
-                        fiber_per_100g=nutrition.get("fiber_per_100g"),
-                        sugar_per_100g=nutrition.get("sugar_per_100g"),
-                        sodium_per_100g=nutrition.get("sodium_per_100g"),
-                        source="open_food_facts",
-                    )
-                    db.add(food)
-                    await db.flush()
-                food_id = food.id
+            # Auto-add to inventory for known items
+            inv = InventoryItem(
+                food_item_id=food_id,
+                receipt_id=receipt.id,
+                quantity=p.get("quantity", 1.0),
+                unit="piece",
+                purchase_date=receipt.upload_date,
+            )
+            db.add(inv)
+            added_to_inventory = True
 
         ri = ReceiptItem(
             receipt_id=receipt.id,
@@ -132,7 +113,7 @@ async def upload_receipt(
             reviewed=reviewed,
         )
         db.add(ri)
-        created_items.append(ri)
+        created_items.append((ri, added_to_inventory))
 
     await db.commit()
     await db.refresh(receipt)
@@ -143,8 +124,16 @@ async def upload_receipt(
         "filename": receipt.filename,
         "parsed": receipt.parsed,
         "items": [
-            {"id": i.id, "raw_name": i.raw_name, "price": i.price, "quantity": i.quantity, "food_item_id": i.food_item_id}
-            for i in created_items
+            {
+                "id": ri.id,
+                "raw_name": ri.raw_name,
+                "price": ri.price,
+                "quantity": ri.quantity,
+                "food_item_id": ri.food_item_id,
+                "reviewed": ri.reviewed,
+                "added_to_inventory": added,
+            }
+            for ri, added in created_items
         ],
     }
 

@@ -148,20 +148,24 @@ function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
       {expanded && detail && (
         <div className="border-t divide-y">
           {detail.items.map(item => (
-            <div key={item.id} className="px-4 py-2 flex items-center justify-between text-sm">
-              <div>
-                <span className={item.food ? 'text-gray-800' : 'text-gray-500'}>{item.raw_name}</span>
-                {item.food && <span className="ml-2 text-green-600 text-xs">→ {item.food.name}</span>}
-                {item.price != null && <span className="ml-2 text-gray-400">€{item.price.toFixed(2)}</span>}
-              </div>
-              <div className="flex gap-2">
-                {!item.reviewed && (
-                  <button onClick={() => setLinkTarget(item.id)}
-                    className="text-xs bg-brand-500 text-white px-2 py-1 rounded hover:bg-brand-600">
-                    Link Food
-                  </button>
+            <div key={item.id} className={`px-4 py-2 flex items-center justify-between text-sm ${!item.food_item_id ? 'bg-orange-50' : ''}`}>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className={item.food ? 'text-gray-800' : 'text-gray-500 italic'}>{item.raw_name}</span>
+                {item.food && <span className="text-green-700 text-xs">→ {item.food.name}</span>}
+                {item.reviewed && item.food && (
+                  <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">✓ In inventory</span>
                 )}
-                {item.food_item_id && (
+                {!item.food_item_id && (
+                  <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">⚠ Needs cataloguing</span>
+                )}
+                {item.price != null && <span className="text-gray-400 ml-1">€{item.price.toFixed(2)}</span>}
+              </div>
+              <div className="flex gap-2 ml-2 shrink-0">
+                <button onClick={() => setLinkTarget(item.id)}
+                  className={`text-xs px-2 py-1 rounded ${item.food_item_id ? 'bg-gray-100 hover:bg-gray-200 text-gray-600' : 'bg-brand-500 text-white hover:bg-brand-600'}`}>
+                  {item.food_item_id ? 'Re-link' : 'Link Food'}
+                </button>
+                {item.food_item_id && !item.reviewed && (
                   <button onClick={() => addToInv.mutate({ itemId: item.id, qty: item.quantity ?? 1, unit: 'piece' })}
                     className="text-xs bg-gray-100 px-2 py-1 rounded hover:bg-gray-200">
                     + Inventory
