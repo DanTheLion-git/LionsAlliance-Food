@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import engine, Base
-from routers import foods, inventory, meals, receipts, nutrition
+from routers import foods, inventory, meals, receipts, nutrition, consumption
+import models.consumption  # noqa: F401 — ensures table is created
 
 
 @asynccontextmanager
@@ -26,3 +27,4 @@ app.include_router(inventory.router, prefix="/api/inventory", tags=["inventory"]
 app.include_router(meals.router, prefix="/api/meals", tags=["meals"])
 app.include_router(receipts.router, prefix="/api/receipts", tags=["receipts"])
 app.include_router(nutrition.router, prefix="/api/nutrition", tags=["nutrition"])
+app.include_router(consumption.router, prefix="/api/consumption", tags=["consumption"])

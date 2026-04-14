@@ -138,7 +138,7 @@ function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={e => { e.stopPropagation(); if (confirm('Delete this receipt?')) deleteThisReceipt.mutate() }}
+            onClick={e => { e.stopPropagation(); if (confirm('Delete this receipt and its parsed lines?\n\nInventory items added from this receipt will be KEPT.')) deleteThisReceipt.mutate() }}
             className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded">
             🗑
           </button>

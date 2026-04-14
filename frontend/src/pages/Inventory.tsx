@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getInventory, getExpiringInventory, createInventory, deleteInventory, updateInventoryStatus, updateInventory, getFoods } from '../api/client'
+import { getInventory, getExpiringInventory, createInventory, deleteInventory, updateInventoryStatus, updateInventory, getFoods, createConsumption } from '../api/client'
 
 type InventoryItem = {
   id: number; food_item_id: number; quantity: number; quantity_remaining: number | null;
@@ -63,14 +63,42 @@ function ConsumeModal({ item, onClose }: { item: InventoryItem; onClose: () => v
   const qc = useQueryClient()
   const current = item.quantity_remaining ?? item.quantity
   const [amount, setAmount] = useState(String(current))
+  const [dateStr, setDateStr] = useState(new Date().toISOString().slice(0, 10))
+  const [split, setSplit] = useState<'daniel' | 'thirza' | 'other' | 'both'>('daniel')
+  const [danielPct, setDanielPct] = useState(50)
   const remaining = current - parseFloat(amount || '0')
+
   const mut = useMutation({
-    mutationFn: () => updateInventoryStatus(item.id, {
-      status: remaining <= 0 ? 'consumed' : 'in_stock',
-      quantity_remaining: Math.max(0, remaining),
-    }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory'] }); qc.invalidateQueries({ queryKey: ['expiring'] }); onClose() },
+    mutationFn: async () => {
+      const consumed = parseFloat(amount || '0')
+      const consumedAt = new Date(dateStr).toISOString()
+      // Build consumption log entries
+      const entries: object[] = []
+      if (split === 'both') {
+        const danielAmt = Math.round(consumed * danielPct / 100 * 100) / 100
+        const thirzaAmt = Math.round((consumed - danielAmt) * 100) / 100
+        if (danielAmt > 0) entries.push({ inventory_item_id: item.id, person: 'daniel', amount: danielAmt, unit: item.unit, consumed_at: consumedAt })
+        if (thirzaAmt > 0) entries.push({ inventory_item_id: item.id, person: 'thirza', amount: thirzaAmt, unit: item.unit, consumed_at: consumedAt })
+      } else {
+        entries.push({ inventory_item_id: item.id, person: split, amount: consumed, unit: item.unit, consumed_at: consumedAt })
+      }
+      // Log to diary
+      if (entries.length > 0) await createConsumption(entries)
+      // Update inventory status
+      await updateInventoryStatus(item.id, {
+        status: remaining <= 0 ? 'consumed' : 'in_stock',
+        quantity_remaining: Math.max(0, remaining),
+      })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['inventory'] })
+      qc.invalidateQueries({ queryKey: ['expiring'] })
+      qc.invalidateQueries({ queryKey: ['consumption'] })
+      qc.invalidateQueries({ queryKey: ['consumption-summary'] })
+      onClose()
+    },
   })
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
@@ -81,13 +109,40 @@ function ConsumeModal({ item, onClose }: { item: InventoryItem; onClose: () => v
           <input type="number" value={amount} onChange={e => setAmount(e.target.value)} min="0" max={current} step="0.1"
             className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
         </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Date consumed</label>
+          <input type="date" value={dateStr} onChange={e => setDateStr(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-2">Who ate it?</label>
+          <div className="flex gap-2">
+            {(['daniel', 'thirza', 'both', 'other'] as const).map(p => (
+              <button key={p} onClick={() => setSplit(p)}
+                className={`flex-1 py-1.5 text-xs rounded-lg border ${split === p ? 'bg-brand-500 text-white border-brand-500' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                {p === 'daniel' ? '🦁 Daniel' : p === 'thirza' ? '🌸 Thirza' : p === 'both' ? '👫 Both' : '👤 Other'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {split === 'both' && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Daniel's share: {danielPct}% / Thirza: {100 - danielPct}%</label>
+            <input type="range" min="0" max="100" value={danielPct} onChange={e => setDanielPct(Number(e.target.value))}
+              className="w-full" />
+            <div className="flex justify-between text-xs text-gray-400 mt-1">
+              <span>Daniel: {(parseFloat(amount||'0') * danielPct / 100).toFixed(1)} {item.unit}</span>
+              <span>Thirza: {(parseFloat(amount||'0') * (100 - danielPct) / 100).toFixed(1)} {item.unit}</span>
+            </div>
+          </div>
+        )}
         {remaining > 0 && <p className="text-sm text-gray-400">Remaining: {remaining.toFixed(1)} {item.unit}</p>}
         {remaining <= 0 && <p className="text-sm text-green-600">Item will be fully consumed.</p>}
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 py-2 text-sm bg-gray-100 rounded-lg">Cancel</button>
           <button onClick={() => mut.mutate()} disabled={mut.isPending || !amount || parseFloat(amount) <= 0}
             className="flex-1 py-2 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50">
-            Log
+            {mut.isPending ? 'Saving…' : 'Log'}
           </button>
         </div>
       </div>

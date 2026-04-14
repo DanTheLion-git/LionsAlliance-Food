@@ -84,9 +84,7 @@ async def upload_receipt(
     for p in parsed_items:
         food_id = None
         reviewed = False
-        added_to_inventory = False
 
-        # Check known name mapping (user-confirmed links only)
         mapping_result = await db.execute(
             select(ReceiptNameMapping).where(ReceiptNameMapping.raw_name == p["raw_name"])
         )
@@ -94,17 +92,6 @@ async def upload_receipt(
         if mapping:
             food_id = mapping.food_item_id
             reviewed = True
-            # Auto-add to inventory for known items
-            inv = InventoryItem(
-                food_item_id=food_id,
-                receipt_id=receipt.id,
-                quantity=p.get("quantity", 1.0),
-                quantity_remaining=p.get("quantity", 1.0),
-                unit="piece",
-                purchase_date=purchase_date or receipt.upload_date,
-            )
-            db.add(inv)
-            added_to_inventory = True
 
         ri = ReceiptItem(
             receipt_id=receipt.id,
@@ -115,7 +102,21 @@ async def upload_receipt(
             reviewed=reviewed,
         )
         db.add(ri)
-        created_items.append((ri, added_to_inventory))
+        await db.flush()  # get ri.id
+
+        inv = InventoryItem(
+            food_item_id=food_id,
+            raw_name=p["raw_name"],
+            receipt_id=receipt.id,
+            receipt_item_id=ri.id,
+            quantity=p.get("quantity", 1.0),
+            quantity_remaining=p.get("quantity", 1.0),
+            unit="piece",
+            purchase_date=purchase_date or receipt.upload_date,
+            status="in_stock",
+        )
+        db.add(inv)
+        created_items.append((ri, food_id is not None))
 
     await db.commit()
     await db.refresh(receipt)
@@ -213,6 +214,14 @@ async def link_receipt_item(
     else:
         db.add(ReceiptNameMapping(raw_name=item.raw_name, food_item_id=body.food_item_id))
 
+    # Update the inventory item that was created from this receipt item
+    inv_result = await db.execute(
+        select(InventoryItem).where(InventoryItem.receipt_item_id == item_id)
+    )
+    inv = inv_result.scalar_one_or_none()
+    if inv:
+        inv.food_item_id = body.food_item_id
+
     await db.commit()
     return {"ok": True, "food_item_id": body.food_item_id}
 
@@ -240,11 +249,11 @@ async def delete_receipt(receipt_id: int, db: AsyncSession = Depends(get_db)):
     receipt = result.scalar_one_or_none()
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
-    # Delete inventory items linked to this receipt first
+    # Null out receipt_id on inventory items so they are PRESERVED
     inv_items = await db.execute(select(InventoryItem).where(InventoryItem.receipt_id == receipt_id))
     for inv in inv_items.scalars().all():
-        await db.delete(inv)
-    # Delete receipt items
+        inv.receipt_id = None
+    # Delete receipt items (parsed lines)
     items = await db.execute(select(ReceiptItem).where(ReceiptItem.receipt_id == receipt_id))
     for item in items.scalars().all():
         await db.delete(item)

@@ -47,3 +47,9 @@ export const logMeal = (mealId: number, data: object) => api.post(`/meals/${meal
 export const getDailyNutrition = (date?: string) =>
   api.get('/nutrition/daily', { params: date ? { date } : {} })
 export const getNutritionHistory = () => api.get('/nutrition/history')
+export const getConsumption = (date?: string, person?: string) =>
+  api.get('/consumption', { params: { ...(date ? { date } : {}), ...(person ? { person } : {}) } })
+export const getConsumptionSummary = (date?: string) =>
+  api.get('/consumption/summary', { params: date ? { date } : {} })
+export const createConsumption = (entries: object[]) => api.post('/consumption', entries)
+export const deleteConsumption = (id: number) => api.delete(`/consumption/${id}`)

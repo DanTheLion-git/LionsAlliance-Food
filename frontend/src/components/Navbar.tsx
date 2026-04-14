@@ -7,6 +7,7 @@ const links = [
   { to: '/inventory', label: 'Inventory' },
   { to: '/catalog', label: 'Food Catalog' },
   { to: '/meals', label: 'Meals' },
+  { to: '/diary', label: 'Diary' },
 ]
 
 export default function Navbar() {
