@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getConsumption, getConsumptionSummary, deleteConsumption } from '../api/client'
+import { getConsumption, getConsumptionSummary, deleteConsumption, getGoals } from '../api/client'
 
 type ConsumptionEntry = {
   id: number; person: string; amount: number; unit: string;
@@ -48,6 +48,11 @@ export default function Diary() {
     queryFn: () => getConsumptionSummary(date).then(r => r.data),
   })
 
+  const { data: goals } = useQuery({
+    queryKey: ['goals'],
+    queryFn: () => getGoals().then(r => r.data),
+  })
+
   const deleteMut = useMutation({
     mutationFn: (id: number) => deleteConsumption(id),
     onSuccess: () => {
@@ -90,6 +95,17 @@ export default function Diary() {
                 <MacroBar label="carbs" value={s.carbs} color="text-yellow-500" />
                 <MacroBar label="fat" value={s.fat} color="text-red-400" />
               </div>
+              {(goals as any)?.[person] && (
+                <div className="mt-2 pt-2 border-t">
+                  <div className="flex justify-between text-xs text-gray-400 mb-1">
+                    <span>Calories vs goal</span>
+                    <span>{Math.round(s.calories)} / {(goals as any)[person].calories} kcal</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="h-full rounded-full bg-orange-400" style={{ width: `${Math.min(100, (s.calories / (goals as any)[person].calories) * 100)}%` }} />
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

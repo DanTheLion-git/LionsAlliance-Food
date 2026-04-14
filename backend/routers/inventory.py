@@ -21,6 +21,7 @@ class InventoryItemCreate(BaseModel):
     notes: Optional[str] = None
     receipt_id: Optional[int] = None
     raw_name: Optional[str] = None
+    location: Optional[str] = "pantry"
 
 
 class InventoryItemUpdate(BaseModel):
@@ -33,6 +34,7 @@ class InventoryItemUpdate(BaseModel):
     quantity_remaining: Optional[float] = None
     discard_reason: Optional[str] = None
     consumed_date: Optional[datetime] = None
+    location: Optional[str] = None
 
 
 class StatusUpdate(BaseModel):
@@ -57,6 +59,7 @@ class InventoryItemRead(BaseModel):
     quantity_remaining: Optional[float] = None
     discard_reason: Optional[str] = None
     consumed_date: Optional[datetime] = None
+    location: Optional[str] = None
     # joined food info
     food_name: Optional[str] = None
     food_brand: Optional[str] = None
@@ -64,6 +67,7 @@ class InventoryItemRead(BaseModel):
     protein_per_100g: Optional[float] = None
     carbs_per_100g: Optional[float] = None
     fat_per_100g: Optional[float] = None
+    serving_size_g: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -77,6 +81,7 @@ def _enrich(row: InventoryItemRead, food: Optional[FoodItem], item: Optional[Inv
         row.protein_per_100g = food.protein_per_100g
         row.carbs_per_100g = food.carbs_per_100g
         row.fat_per_100g = food.fat_per_100g
+        row.serving_size_g = food.serving_size_g
     elif item and item.raw_name:
         row.food_name = f"[Unlinked] {item.raw_name}"
     return row
@@ -208,4 +213,28 @@ async def delete_inventory_item(item_id: int, db: AsyncSession = Depends(get_db)
     await db.delete(item)
     await db.commit()
     return {"ok": True}
+
+
+class BulkStatusUpdate(BaseModel):
+    ids: list[int]
+    status: str
+    discard_reason: Optional[str] = None
+
+
+@router.post("/bulk-status")
+async def bulk_update_status(data: BulkStatusUpdate, db: AsyncSession = Depends(get_db)):
+    """Set status on multiple inventory items at once."""
+    updated = 0
+    for item_id in data.ids:
+        result = await db.execute(select(InventoryItem).where(InventoryItem.id == item_id))
+        item = result.scalar_one_or_none()
+        if item:
+            item.status = data.status
+            if data.discard_reason:
+                item.discard_reason = data.discard_reason
+            if data.status in ("consumed", "discarded"):
+                item.consumed_date = datetime.utcnow()
+            updated += 1
+    await db.commit()
+    return {"ok": True, "updated": updated}
 

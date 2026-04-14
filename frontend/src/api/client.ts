@@ -54,3 +54,28 @@ export const getConsumptionSummary = (date?: string) =>
 export const createConsumption = (entries: object[]) => api.post('/consumption', entries)
 export const deleteConsumption = (id: number) => api.delete(`/consumption/${id}`)
 export const applyAllMappings = () => api.post('/receipts/apply-all-mappings')
+
+// Goals
+export const getGoals = () => api.get('/goals')
+export const getGoal = (person: string) => api.get(`/goals/${person}`)
+export const upsertGoal = (person: string, data: object) => api.put(`/goals/${person}`, data)
+
+// Shopping list
+export const getShopping = () => api.get('/shopping')
+export const createShoppingItem = (data: object) => api.post('/shopping', data)
+export const updateShoppingItem = (id: number, data: object) => api.patch(`/shopping/${id}`, data)
+export const deleteShoppingItem = (id: number) => api.delete(`/shopping/${id}`)
+export const clearCheckedShopping = () => api.delete('/shopping/clear-checked')
+
+// Meal plan
+export const getMealPlan = (week?: string) => api.get('/meal-plan', { params: week ? { week } : {} })
+export const createMealPlanEntry = (data: object) => api.post('/meal-plan', data)
+export const deleteMealPlanEntry = (id: number) => api.delete(`/meal-plan/${id}`)
+
+// Reports
+export const getWeeklyReport = (start?: string) => api.get('/reports/weekly', { params: start ? { start } : {} })
+export const getMonthlyReport = (month?: string) => api.get('/reports/monthly', { params: month ? { month } : {} })
+
+// Inventory bulk
+export const bulkInventoryStatus = (ids: number[], status: string, discard_reason?: string) =>
+  api.post('/inventory/bulk-status', { ids, status, ...(discard_reason ? { discard_reason } : {}) })

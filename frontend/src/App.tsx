@@ -6,6 +6,9 @@ import Inventory from './pages/Inventory'
 import FoodCatalog from './pages/FoodCatalog'
 import Meals from './pages/Meals'
 import Diary from './pages/Diary'
+import Shopping from './pages/Shopping'
+import MealPlanner from './pages/MealPlanner'
+import Reports from './pages/Reports'
 
 export default function App() {
   return (
@@ -19,6 +22,9 @@ export default function App() {
           <Route path="/catalog" element={<FoodCatalog />} />
           <Route path="/meals" element={<Meals />} />
           <Route path="/diary" element={<Diary />} />
+          <Route path="/shopping" element={<Shopping />} />
+          <Route path="/planner" element={<MealPlanner />} />
+          <Route path="/reports" element={<Reports />} />
         </Routes>
       </main>
     </div>

@@ -271,6 +271,9 @@ export default function Receipts() {
               className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
               <option value="jumbo">Jumbo (PNG)</option>
               <option value="netto">Netto (PDF)</option>
+              <option value="albert_heijn">Albert Heijn (PDF)</option>
+              <option value="lidl">Lidl (PDF)</option>
+              <option value="aldi">Aldi (PDF)</option>
             </select>
           </div>
           <div>

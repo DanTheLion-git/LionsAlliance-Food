@@ -21,3 +21,4 @@ class InventoryItem(Base):
     quantity_remaining = Column(Float, nullable=True)
     discard_reason = Column(String, nullable=True)
     consumed_date = Column(DateTime, nullable=True)
+    location = Column(String, nullable=True, default="pantry")  # fridge, pantry, freezer, other

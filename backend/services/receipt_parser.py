@@ -171,3 +171,125 @@ def parse_netto_pdf(filepath: str) -> tuple[list[dict], datetime | None]:
                             })
                         pending_qty = 1.0  # reset after consuming
     return items, extract_netto_date(filepath)
+
+
+def parse_albert_heijn_pdf(filepath: str) -> list[dict]:
+    """Extract product lines from an Albert Heijn digital receipt PDF.
+    AH format: lines like "Kaas Gouda 48+ 500g   2,49" with totals section."""
+    items = []
+    with pdfplumber.open(filepath) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            lines = text.split("\n")
+            in_products = False
+            pending_qty = 1.0
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                if re.search(r"Omschrijving|Artikel|Product|Aantal", line, re.IGNORECASE):
+                    in_products = True
+                    continue
+                if in_products and re.search(r"Totaal|Subtotaal|Wisselgeld|Pinnen|Betaald", line, re.IGNORECASE):
+                    in_products = False
+                    continue
+                if in_products:
+                    qty_match = re.match(r"^(\d+)\s*[xX]\s*(?:[\d]+[,\.][\d]{2}\s*[A-Z]?)?\s*$", line)
+                    if qty_match:
+                        pending_qty = float(qty_match.group(1))
+                        continue
+                    m = re.match(r"^(.+?)\s+([-]?\d+[,\.]\d{2})\s*$", line)
+                    if m:
+                        name = m.group(1).strip()
+                        try:
+                            total_price = float(m.group(2).replace(",", "."))
+                        except ValueError:
+                            pending_qty = 1.0
+                            continue
+                        if total_price > 0 and len(name) > 2:
+                            per_item = round(total_price / pending_qty, 2)
+                            items.append({"raw_name": name, "price": per_item, "quantity": pending_qty,
+                                          "parsed_weight_g": parse_weight_from_name(name)})
+                        pending_qty = 1.0
+    return items
+
+
+def parse_lidl_pdf(filepath: str) -> list[dict]:
+    """Extract product lines from a Lidl receipt PDF.
+    Lidl format is similar to Netto (German discount) with slight variations."""
+    items = []
+    with pdfplumber.open(filepath) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            lines = text.split("\n")
+            in_products = False
+            pending_qty = 1.0
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                if re.search(r"EUR|Artikel|Menge|St[üu]ck", line, re.IGNORECASE):
+                    in_products = True
+                    continue
+                if in_products and re.search(r"Summe|Gesamt|Zu\s*zahlen|EC.Karte|Bar|SEPA", line, re.IGNORECASE):
+                    in_products = False
+                    continue
+                if in_products:
+                    qty_match = re.match(r"^(\d+)\s*[xX]\s*(?:[\d]+[,\.][\d]{2}\s*[A-Z]?)?\s*$", line)
+                    if qty_match:
+                        pending_qty = float(qty_match.group(1))
+                        continue
+                    m = re.match(r"^(.+?)\s+([-]?\d+[,\.]\d{2})\s*[A-Z]?\s*$", line)
+                    if m:
+                        name = m.group(1).strip()
+                        try:
+                            total_price = float(m.group(2).replace(",", "."))
+                        except ValueError:
+                            pending_qty = 1.0
+                            continue
+                        if total_price > 0 and len(name) > 2:
+                            per_item = round(total_price / pending_qty, 2)
+                            items.append({"raw_name": name, "price": per_item, "quantity": pending_qty,
+                                          "parsed_weight_g": parse_weight_from_name(name)})
+                        pending_qty = 1.0
+    return items, None
+
+
+def parse_aldi_pdf(filepath: str) -> list[dict]:
+    """Extract product lines from an Aldi receipt PDF."""
+    items = []
+    with pdfplumber.open(filepath) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            lines = text.split("\n")
+            in_products = False
+            pending_qty = 1.0
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                if re.search(r"EUR|Artikel|Menge", line, re.IGNORECASE):
+                    in_products = True
+                    continue
+                if in_products and re.search(r"Summe|Gesamt|Zu\s*zahlen|EC|Bargeld", line, re.IGNORECASE):
+                    in_products = False
+                    continue
+                if in_products:
+                    qty_match = re.match(r"^(\d+)\s*[xX]\s*(?:[\d]+[,\.][\d]{2}\s*[A-Z]?)?\s*$", line)
+                    if qty_match:
+                        pending_qty = float(qty_match.group(1))
+                        continue
+                    m = re.match(r"^(.+?)\s+([-]?\d+[,\.]\d{2})\s*[A-Z]?\s*$", line)
+                    if m:
+                        name = m.group(1).strip()
+                        try:
+                            total_price = float(m.group(2).replace(",", "."))
+                        except ValueError:
+                            pending_qty = 1.0
+                            continue
+                        if total_price > 0 and len(name) > 2:
+                            per_item = round(total_price / pending_qty, 2)
+                            items.append({"raw_name": name, "price": per_item, "quantity": pending_qty,
+                                          "parsed_weight_g": parse_weight_from_name(name)})
+                        pending_qty = 1.0
+    return items, None
