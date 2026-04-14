@@ -238,7 +238,11 @@ async def delete_receipt(receipt_id: int, db: AsyncSession = Depends(get_db)):
     receipt = result.scalar_one_or_none()
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
-    # Delete all items first
+    # Delete inventory items linked to this receipt first
+    inv_items = await db.execute(select(InventoryItem).where(InventoryItem.receipt_id == receipt_id))
+    for inv in inv_items.scalars().all():
+        await db.delete(inv)
+    # Delete receipt items
     items = await db.execute(select(ReceiptItem).where(ReceiptItem.receipt_id == receipt_id))
     for item in items.scalars().all():
         await db.delete(item)
