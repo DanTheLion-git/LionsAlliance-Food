@@ -1,16 +1,7 @@
-__pycache__/
-*.py[cod]
-*.env
-.env
 node_modules/
-dist/
-.vite/
 *.log
-uploads_data/
-postgres_data/
-
-# Personal receipt uploads — ignore actual files, keep folder structure
-Uploads/**/*.png
-Uploads/**/*.jpg
-Uploads/**/*.jpeg
-Uploads/**/*.pdf
+.env
+# Recipes are data, not code: their own git repo on the Pi (written by the KB connector)
+recipes/
+# Old food-tracker receipt uploads, kept on disk only
+Uploads/

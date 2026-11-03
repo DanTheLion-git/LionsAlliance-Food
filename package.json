@@ -1,0 +1,11 @@
+{
+  "name": "lionsalliance-cookbook",
+  "version": "2.0.0",
+  "description": "Kitchen cookbook: read-only recipe viewer + JSON API for a small kitchen screen. Recipes are written by Claude through the knowledgebase connector.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  }
+}
