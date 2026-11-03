@@ -2,6 +2,10 @@
 // tabs, tick-off ingredients/steps, one-step-at-a-time cook mode, timers.
 (() => {
   const $ = (s, el = document) => el.querySelector(s);
+  const NL = document.documentElement.lang === 'nl';
+  const T = NL
+    ? { step: 'Stap', back: '‹ Terug', next: 'Volgende ›', done: 'Klaar ✓', timer: (m) => `⏱ Timer ${m} min`, ready: 'klaar!' }
+    : { step: 'Step', back: '‹ Back', next: 'Next ›', done: 'Done ✓', timer: (m) => `⏱ Start ${m} min timer`, ready: 'done!' };
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const store = {
     get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } },
@@ -34,7 +38,7 @@
     bar.hidden = !timers.length;
     bar.innerHTML = timers.map((t, i) => {
       const left = t.end - Date.now();
-      return `<div class="trun${left <= 0 ? ' ring' : ''}"><span>${t.label} · ${left <= 0 ? 'done!' : fmt(left)}</span><button type="button" data-i="${i}">${left <= 0 ? 'OK' : 'Stop'}</button></div>`;
+      return `<div class="trun${left <= 0 ? ' ring' : ''}"><span>${t.label} · ${left <= 0 ? T.ready : fmt(left)}</span><button type="button" data-i="${i}">${left <= 0 ? 'OK' : 'Stop'}</button></div>`;
     }).join('');
     document.body.style.setProperty('--tb', timers.length ? `${bar.offsetHeight + 8}px` : '0px');
   }
@@ -89,7 +93,7 @@
 
   // timers on step rows
   $$('.steps .timer').forEach((b) => b.addEventListener('click', () => {
-    startTimer(Number(b.dataset.min), `Step ${b.closest('.step').dataset.n}`);
+    startTimer(Number(b.dataset.min), `${T.step} ${b.closest('.step').dataset.n}`);
   }));
 
   // ── cook mode ──
@@ -106,13 +110,14 @@
   function show(i) {
     state.step = Math.max(0, Math.min(steps.length - 1, i)); save();
     const s = steps[state.step];
-    el.count.textContent = `Step ${state.step + 1} / ${steps.length}`;
+    el.count.textContent = `${T.step} ${state.step + 1} / ${steps.length}`;
     el.sec.textContent = s.s;
     el.text.textContent = s.t;
     el.timer.hidden = !s.m;
-    if (s.m) el.timer.textContent = `⏱ Start ${s.m} min timer`;
+    if (s.m) el.timer.textContent = T.timer(s.m);
     el.prev.disabled = state.step === 0;
-    el.next.textContent = state.step === steps.length - 1 ? 'Done ✓' : 'Next ›';
+    el.next.textContent = state.step === steps.length - 1 ? T.done : T.next;
+    el.prev.textContent = T.back;
     $('.cm-body').scrollTop = 0;
   }
   function open() {
@@ -137,7 +142,7 @@
   });
   el.timer.addEventListener('click', () => {
     const s = steps[state.step];
-    startTimer(s.m, `Step ${state.step + 1}`);
+    startTimer(s.m, `${T.step} ${state.step + 1}`);
   });
   window.addEventListener('popstate', () => close(true));
   document.addEventListener('visibilitychange', () => { if (!cm.hidden && document.visibilityState === 'visible') keepAwake(true); });

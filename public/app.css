@@ -155,9 +155,14 @@ main { max-width: 680px; margin: 0 auto; padding: 0 12px 24px; }
 .notes li { margin: 4px 0; font-size: 16px; }
 .source { color: var(--muted); font-size: 14px; margin-top: 16px; }
 
+.bar .spacer { flex: 1; }
+.bar .lang {
+  display: grid; place-items: center; height: 32px; min-width: 40px; padding: 0 8px;
+  border: 1px solid var(--border); border-radius: 999px;
+  font-size: 14px; font-weight: 700; text-decoration: none; color: var(--muted);
+}
 .cook {
-  position: fixed; top: 6px; right: 10px; z-index: 6;
-  height: 32px; padding: 0 14px; border: 0; border-radius: 999px;
+  flex: none; height: 32px; padding: 0 14px; border: 0; border-radius: 999px;
   background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 15px;
 }
 .cook { display: none; }
@@ -209,7 +214,6 @@ body { padding-bottom: var(--tb, 0px); }
   .js .tabs { display: none; }
   .recipe { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 0 32px; }
   .recipe > h1, .recipe > .meta, .recipe > .desc { grid-column: 1 / -1; }
-  .cook { right: max(10px, calc(50vw - 490px)); }
   .js .pane[hidden] { display: block; }
   .js .pane > h2:first-child { display: block; }
 }
